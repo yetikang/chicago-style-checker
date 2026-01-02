@@ -1,51 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { RewriteResponse, Change } from '@/types'
 import { X, Eye, Copy } from 'lucide-react'
 
-// Mock response function - simulates API call
-async function mockRewrite(text: string): Promise<RewriteResponse> {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  
-  // Mock response with at least 2 spelling fixes and 1 punctuation fix
-  // The revised_text contains the corrected versions
-  return {
-    revised_text: "The research methodology was comprehensive, including both quantitative and qualitative approaches. The study's findings revealed significant correlations between variables; however, the authors noted several limitations that warrant further investigation.",
-    changes: [
-      {
-        change_id: "c1",
-        type: "spelling",
-        before: "quantative",
-        after: "quantitative",
-        reason: "Corrected spelling: 'quantative' should be 'quantitative' (Merriam-Webster standard)",
-        severity: "required",
-        context_before: "both ",
-        context_after: " and qualitative"
-      },
-      {
-        change_id: "c2",
-        type: "spelling",
-        before: "methodolgy",
-        after: "methodology",
-        reason: "Corrected spelling: 'methodolgy' should be 'methodology'",
-        severity: "required",
-        context_before: "research ",
-        context_after: " was comprehensive"
-      },
-      {
-        change_id: "c3",
-        type: "punctuation",
-        before: "variables",
-        after: "variables;",
-        reason: "Added semicolon before 'however' to properly connect independent clauses per Chicago style",
-        severity: "required",
-        context_before: "between ",
-        context_after: " however, the"
-      }
-    ]
-  }
+// Normalize string for matching (handles whitespace, quotes, etc.)
+function normalizeForMatching(str: string): string {
+  return str
+    .replace(/\s+/g, ' ') // Normalize all whitespace to single space
+    .replace(/[""]/g, '"') // Normalize smart quotes to straight quotes
+    .replace(/['']/g, "'") // Normalize smart apostrophes
+    .replace(/[–—]/g, '-') // Normalize en/em dashes to hyphen
+    .trim()
 }
 
 // Helper function to render revised text with highlights
@@ -53,48 +19,160 @@ function renderRevisedText(
   text: string,
   changes: Change[],
   showHighlights: boolean,
-  activeChangeId: string | null
+  activeChangeId: string | null,
+  locatedChangeIds: Set<string>
 ): React.ReactNode[] {
   if (!showHighlights || changes.length === 0) {
     return [text]
   }
 
-  // Find positions of each change in the text using context
+  // Find positions of each change in the text
   const changePositions: Array<{ start: number; end: number; change: Change }> = []
   
+  // Debug logging (only in development - check if we're in dev mode)
+  const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+  
+  if (isDev) {
+    console.log(`[Highlight] Processing ${changes.length} changes in text of length ${text.length}`)
+  }
+  
   changes.forEach(change => {
-    const searchText = change.after
-    const fullContextBefore = change.context_before + searchText
-    const fullContextAfter = searchText + change.context_after
-    
-    // Try to find the change using context
-    let found = false
-    let searchStart = 0
-    
-    while (!found && searchStart < text.length) {
-      const index = text.indexOf(searchText, searchStart)
-      if (index === -1) break
-      
-      // Check if context matches (be flexible with context matching)
-      const beforeText = text.substring(Math.max(0, index - change.context_before.length), index)
-      const afterText = text.substring(index + searchText.length, index + searchText.length + change.context_after.length)
-      
-      // Match if context is close enough (allowing for some flexibility)
-      const contextBeforeMatch = change.context_before.length === 0 || 
-        beforeText.endsWith(change.context_before.slice(-Math.min(change.context_before.length, 15)))
-      const contextAfterMatch = change.context_after.length === 0 || 
-        afterText.startsWith(change.context_after.slice(0, Math.min(change.context_after.length, 15)))
-      
-      if (contextBeforeMatch && contextAfterMatch) {
+    // Prefer server-side offsets if available
+    if (change.loc) {
+      const { start, end } = change.loc
+      if (start >= 0 && end <= text.length && start < end) {
         changePositions.push({
-          start: index,
-          end: index + searchText.length,
+          start,
+          end,
           change
         })
+        locatedChangeIds.add(change.change_id)
+        if (isDev) {
+          console.log(`[Highlight] Using server offset for ${change.change_id}: ${start}-${end}`)
+        }
+        return // Skip to next change
+      }
+    }
+    
+    // Fallback to string matching if no server-side offset
+    const searchText = change.after.trim()
+    const normalizedSearchText = normalizeForMatching(searchText)
+    
+    // Build full context pattern: context_before + after + context_after
+    const contextBefore = change.context_before.trim()
+    const contextAfter = change.context_after.trim()
+    const fullPattern = (contextBefore + ' ' + searchText + ' ' + contextAfter).trim()
+    const normalizedPattern = normalizeForMatching(fullPattern)
+    
+    // Try to find the change using full context pattern first (most reliable)
+    let found = false
+    let matchIndex = -1
+    let matchLength = searchText.length
+    
+    // Strategy 1: Try to find the full context pattern
+    if (fullPattern.length > searchText.length && text.includes(fullPattern)) {
+      const patternIndex = text.indexOf(fullPattern)
+      if (patternIndex !== -1) {
+        // Extract the position of "after" within the pattern
+        const beforeInPattern = contextBefore.length
+        matchIndex = patternIndex + beforeInPattern
+        matchLength = searchText.length
         found = true
       }
+    }
+    
+    // Strategy 2: Search for "after" text, then validate with normalized context
+    if (!found) {
+      const normalizedContextBefore = normalizeForMatching(contextBefore)
+      const normalizedContextAfter = normalizeForMatching(contextAfter)
       
-      searchStart = index + 1
+      // Try multiple search approaches
+      const searchVariants = [
+        searchText, // Original
+        normalizedSearchText, // Normalized
+        searchText.toLowerCase(), // Lowercase
+      ]
+      
+      for (const searchVariant of searchVariants) {
+        let searchStart = 0
+        while (searchStart < text.length) {
+          const index = text.toLowerCase().indexOf(searchVariant.toLowerCase(), searchStart)
+          if (index === -1) break
+          
+          // Get surrounding context
+          const beforeText = text.substring(Math.max(0, index - Math.max(contextBefore.length, 40)), index)
+          const afterText = text.substring(index + searchVariant.length, index + searchVariant.length + Math.max(contextAfter.length, 40))
+          
+          // Normalize and compare
+          const normalizedBefore = normalizeForMatching(beforeText)
+          const normalizedAfter = normalizeForMatching(afterText)
+          
+          const contextBeforeMatch = contextBefore.length === 0 || 
+            normalizedBefore.endsWith(normalizedContextBefore.slice(-Math.min(normalizedContextBefore.length, 25)))
+          const contextAfterMatch = contextAfter.length === 0 || 
+            normalizedAfter.startsWith(normalizedContextAfter.slice(0, Math.min(normalizedContextAfter.length, 25)))
+          
+          if (contextBeforeMatch && contextAfterMatch) {
+            matchIndex = index
+            matchLength = searchText.length // Use original length
+            found = true
+            break
+          }
+          
+          searchStart = index + 1
+        }
+        if (found) break
+      }
+    }
+    
+    // Strategy 3: Fallback to simple search with normalized context validation
+    if (!found) {
+      let searchStart = 0
+      while (searchStart < text.length) {
+        const index = text.indexOf(searchText, searchStart)
+        if (index === -1) break
+        
+        // Check context with normalization
+        const beforeText = text.substring(Math.max(0, index - Math.max(contextBefore.length, 30)), index)
+        const afterText = text.substring(index + searchText.length, index + searchText.length + Math.max(contextAfter.length, 30))
+        
+        const normalizedBefore = normalizeForMatching(beforeText)
+        const normalizedAfter = normalizeForMatching(afterText)
+        const normalizedContextBefore = normalizeForMatching(contextBefore)
+        const normalizedContextAfter = normalizeForMatching(contextAfter)
+        
+        // Match if normalized context is close enough
+        const contextBeforeMatch = contextBefore.length === 0 || 
+          normalizedBefore.endsWith(normalizedContextBefore.slice(-Math.min(normalizedContextBefore.length, 20)))
+        const contextAfterMatch = contextAfter.length === 0 || 
+          normalizedAfter.startsWith(normalizedContextAfter.slice(0, Math.min(normalizedContextAfter.length, 20)))
+        
+        if (contextBeforeMatch && contextAfterMatch) {
+          matchIndex = index
+          matchLength = searchText.length
+          found = true
+          break
+        }
+        
+        searchStart = index + 1
+      }
+    }
+    
+    if (found && matchIndex !== -1) {
+      changePositions.push({
+        start: matchIndex,
+        end: matchIndex + matchLength,
+        change
+      })
+      locatedChangeIds.add(change.change_id)
+      
+      if (isDev) {
+        console.log(`[Highlight] Found change ${change.change_id} at index ${matchIndex}: "${text.substring(matchIndex, matchIndex + matchLength)}"`)
+      }
+    } else {
+      if (isDev) {
+        console.warn(`[Highlight] Could not locate change ${change.change_id}: after="${searchText}", context_before="${contextBefore}", context_after="${contextAfter}"`)
+      }
     }
   })
 
@@ -157,10 +235,22 @@ export default function Home() {
   const [showHighlights, setShowHighlights] = useState(true)
   const [activeChangeId, setActiveChangeId] = useState<string | null>(null)
 
+  const abortControllerRef = useRef<AbortController | null>(null)
+
   const handleApply = async () => {
+    // Prevent multiple in-flight requests
+    if (loading) {
+      return
+    }
+
     if (!inputText.trim()) {
       setError('Please enter some text to edit.')
       return
+    }
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
     }
 
     setLoading(true)
@@ -168,13 +258,65 @@ export default function Home() {
     setResult(null)
     setActiveChangeId(null)
 
+    // Create new AbortController for this request
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
+    // Client-side timeout (30 seconds)
+    const timeoutId = setTimeout(() => {
+      abortController.abort()
+    }, 30000)
+
     try {
-      const response = await mockRewrite(inputText)
-      setResult(response)
+      const response = await fetch('/api/rewrite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: inputText }),
+        signal: abortController.signal,
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        // Try to parse error response
+        let errorMessage = 'An error occurred while processing your text.'
+        let errorType = 'unknown'
+        try {
+          const errorData = await response.json()
+          if (errorData.error?.message) {
+            errorMessage = errorData.error.message
+          }
+          if (errorData.error?.type) {
+            errorType = errorData.error.type
+          }
+        } catch {
+          // If JSON parsing fails, use status text
+          errorMessage = `Error: ${response.status} ${response.statusText}`
+        }
+
+        // Handle 429 rate limit with friendly message
+        if (response.status === 429 || errorType === 'rate_limit') {
+          errorMessage = 'Rate limit exceeded. Please wait ~60 seconds and try again.'
+        }
+
+        throw new Error(errorMessage)
+      }
+
+      const data: RewriteResponse = await response.json()
+      setResult(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred while processing your text.')
+      // Handle timeout/abort errors
+      if (err instanceof Error && err.name === 'AbortError') {
+        setError('Timed out after 30 seconds. Please try again or enable mock mode.')
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred while processing your text.')
+      }
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -191,15 +333,31 @@ export default function Home() {
     setActiveChangeId(null)
   }
 
+  // Compute located change IDs separately
+  const locatedChangeIdsMemo = useMemo(() => {
+    if (!result) return new Set<string>()
+    const locatedIds = new Set<string>()
+    renderRevisedText(
+      result.revised_text,
+      result.changes,
+      true, // Always compute locations
+      null, // No active change needed for computation
+      locatedIds
+    )
+    return locatedIds
+  }, [result])
+
   const renderedText = useMemo(() => {
     if (!result) return null
+    const locatedIds = new Set(locatedChangeIdsMemo)
     return renderRevisedText(
       result.revised_text,
       result.changes,
       showHighlights,
-      activeChangeId
+      activeChangeId,
+      locatedIds
     )
-  }, [result, showHighlights, activeChangeId])
+  }, [result, showHighlights, activeChangeId, locatedChangeIdsMemo])
 
   return (
     <div className="min-h-screen bg-white p-8">
@@ -343,26 +501,45 @@ export default function Home() {
               Changes
             </h2>
             <ul className="space-y-2.5">
-              {result.changes.map((change) => (
-                <li
-                  key={change.change_id}
-                  onMouseEnter={() => setActiveChangeId(change.change_id)}
-                  onMouseLeave={() => setActiveChangeId(null)}
-                  className={`p-3 border-l border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-colors cursor-pointer ${
-                    activeChangeId === change.change_id ? 'border-gray-400 bg-gray-50' : ''
-                  }`}
-                >
-                  <div className="text-sm text-gray-900">
-                    <span className="font-normal">
-                      [{change.type}] {change.before} → {change.after}
-                    </span>
-                    <span className="ml-2 text-gray-600">{change.reason}</span>
-                    {change.severity !== 'required' && (
-                      <span className="ml-2 text-xs text-gray-500">({change.severity})</span>
-                    )}
-                  </div>
-                </li>
-              ))}
+              {result.changes.map((change) => {
+                const isLocated = locatedChangeIdsMemo.has(change.change_id)
+                return (
+                  <li
+                    key={change.change_id}
+                    onMouseEnter={() => {
+                      if (isLocated) {
+                        setActiveChangeId(change.change_id)
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (isLocated) {
+                        setActiveChangeId(null)
+                      }
+                    }}
+                    className={`p-3 border-l border-gray-200 transition-colors ${
+                      isLocated
+                        ? 'hover:border-gray-400 hover:bg-gray-50 cursor-pointer'
+                        : 'opacity-60 cursor-default'
+                    } ${
+                      activeChangeId === change.change_id ? 'border-gray-400 bg-gray-50' : ''
+                    }`}
+                    title={!isLocated ? 'Could not locate this change in the revised text' : undefined}
+                  >
+                    <div className="text-sm text-gray-900">
+                      <span className="font-normal">
+                        [{change.type}] {change.before} → {change.after}
+                      </span>
+                      {!isLocated && (
+                        <span className="ml-2 text-xs text-gray-500 italic">(unlocated)</span>
+                      )}
+                      <span className="ml-2 text-gray-600">{change.reason}</span>
+                      {change.severity !== 'required' && (
+                        <span className="ml-2 text-xs text-gray-500">({change.severity})</span>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}

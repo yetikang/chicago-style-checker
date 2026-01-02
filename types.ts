@@ -1,4 +1,4 @@
-export type ChangeType = 
+ export type ChangeType = 
   | 'spelling'
   | 'grammar'
   | 'punctuation'
@@ -20,6 +20,10 @@ export interface Change {
   severity: Severity
   context_before: string
   context_after: string
+  loc?: {
+    start: number
+    end: number
+  }
 }
 
 export interface RewriteResponse {
