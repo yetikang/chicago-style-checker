@@ -32,4 +32,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# local debug artifacts
+cookies.txt
+out*.txt
+
+# local scripts/output (optional, only if these are generated)
+# *.log
 
