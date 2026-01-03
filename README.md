@@ -1,263 +1,145 @@
 # Chicago Style Checker
 
-A minimalist, academic-style web utility that performs Chicago Manual of Style (CMoS)–informed paragraph-level copyediting.
+A web-based copyediting tool that applies the **Chicago Manual of Style (CMoS)** to your writing. Paste a paragraph, and get instant, AI-powered corrections with detailed explanations.
+
+![CMoS 17th Edition](https://img.shields.io/badge/CMoS-17th_Edition-8B0000)
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
+
+---
 
 ## Features
 
-- **Paragraph-level editing**: Paste a paragraph and receive Chicago-style corrections
-- **Visual highlights**: See all edits highlighted in red
-- **Detailed change list**: Each edit includes an explanation and reason
-- **Hover-to-locate**: Hover over change items to highlight corresponding text in the revised output
-- **MOCK and REAL modes**: Test with deterministic mock responses or use Gemini for real editing
+- **Instant Corrections** — Submit a paragraph and receive Chicago-style edits in seconds
+- **Visual Diff Highlights** — See exactly what changed with inline strikethrough and color-coded corrections
+- **Detailed Explanations** — Each edit includes the rule category, before/after text, and reasoning
+- **Hover-to-Locate** — Hover over any change in the list to highlight its position in the revised text
+- **One-Click Copy** — Easily copy the corrected text to your clipboard
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 18 or later
+- An LLM API key (Gemini or Groq)
 
 ### Installation
 
-1. Clone the repository and install dependencies:
-
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd chicago-style-checker
+
+# Install dependencies
 npm install
+
+# Configure environment variables
+cp .env.local.example .env.local
 ```
 
-2. Create a `.env.local` file in the root directory:
+### Configuration
+
+Edit `.env.local` with your settings:
 
 ```bash
-# For MOCK mode (no API key needed)
-USE_MOCK=1
+# Required: LLM Provider API Key
+GEMINI_API_KEY=your-gemini-api-key    # Required if using Gemini (default)
+# GROQ_API_KEY=your-groq-api-key      # Required if using Groq
 
-# For REAL mode (requires Gemini API key)
-# USE_MOCK=0
-# GEMINI_API_KEY=your-api-key-here
+# Optional: LLM Provider Selection
+# LLM_PROVIDER=gemini                 # Options: gemini | groq (default: gemini)
+
+# Optional: Password Protection
+# SITE_PASSWORD=your-password         # Enables site-wide password gate
+# DISABLE_PASSWORD_GATE=1             # Disables password for local dev
+
+# Optional: Development Mode
+# USE_MOCK=1                          # Use mock responses (no API calls)
 ```
 
-### Running the Development Server
+### Run the Application
 
 ```bash
+# Development
 npm run dev
+
+# Production
+npm run build && npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) to start editing.
 
-### Building for Production
+---
 
-```bash
-npm run build
-npm start
-```
+## Technology Stack
 
-## Environment Variables
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 14 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS |
+| AI Backend | Google Gemini / Groq |
+| Rate Limiting | Upstash Redis |
 
-### `USE_MOCK`
+---
 
-- **Value**: `"1"` for mock mode, any other value or unset for real mode
-- **Default**: Unset (real mode)
-- **Description**: When set to `"1"`, the API uses deterministic mock responses instead of calling Gemini. This is useful for:
-  - Development and testing without API costs
-  - UI testing and demos
-  - Offline development
-
-**Mock mode corrections:**
-- `teh` → `the` (spelling)
-- `recieve` → `receive` (spelling)
-- `occured` → `occurred` (spelling)
-- Multiple consecutive spaces → single space (punctuation/spacing)
-
-### `GEMINI_API_KEY`
-
-- **Required**: Only when `USE_MOCK` is not `"1"`
-- **Description**: Your Google Gemini API key for real editing mode
-- **How to get**: Sign up at [Google AI Studio](https://aistudio.google.com/) and create an API key
-- **Alternative**: You can also use `GOOGLE_API_KEY` (the SDK accepts both)
-
-### `GEMINI_MODEL` (Optional)
-
-- **Default**: `gemini-2.0-flash-exp`
-- **Description**: The Gemini model to use for editing
-- **Examples**: `gemini-2.0-flash-exp`, `gemini-1.5-pro`, `gemini-1.5-flash`
-
-### Server Protections (Rate Limiting & Kill Switch)
-
-#### `MAINTENANCE_MODE`
-- **Value**: `"1"` to enable, any other value to disable.
-- **Description**: Immediately disables the rewrite endpoint with a 503 "Service temporarily unavailable" message.
-
-#### `RATE_GLOBAL_RPM`
-- **Default**: `9`
-- **Description**: Maximum expensive (Gemini) calls allowed globally per minute across all users.
-
-#### `RATE_USER_30S`
-- **Default**: `1`
-- **Description**: Maximum expensive calls allowed per user (anonymous ID) in any 30-second window.
-
-#### `RATE_USER_RPD`
-- **Default**: `20`
-- **Description**: Maximum expensive calls allowed per user per day (aligned to `RATE_TZ`).
-
-#### `RATE_TZ`
-- **Default**: `America/Los_Angeles`
-- **Description**: Timezone used for daily rate limit buckets.
-
-#### `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN`
-- **Description**: Upstash Redis credentials for production rate limiting. If missing, the system falls back to a best-effort in-memory limiter.
-
-## API Endpoint
+## API Reference
 
 ### `POST /api/rewrite`
 
-Edits a paragraph according to Chicago Manual of Style guidelines.
+Applies Chicago Manual of Style corrections to the provided text.
 
-#### Request
-
+**Request:**
 ```json
 {
-  "text": "string"
+  "text": "Your paragraph here (max 4000 characters)"
 }
 ```
 
-**Validation:**
-- `text` must be a non-empty string
-- Maximum length: 4000 characters
-- Returns HTTP 400 on validation errors
-
-#### Response
-
-**Success (HTTP 200):**
+**Response:**
 ```json
 {
-  "revised_text": "string",
+  "revised_text": "Corrected paragraph",
   "changes": [
     {
       "change_id": "c1",
-      "type": "spelling|grammar|punctuation|capitalization|hyphenation|numbers|consistency|citation_format|other",
-      "before": "string",
-      "after": "string",
-      "reason": "string",
-      "severity": "required|recommended|optional|uncertain",
-      "context_before": "string",
-      "context_after": "string"
+      "type": "spelling|grammar|punctuation|...",
+      "before": "original",
+      "after": "corrected",
+      "reason": "Explanation of the change",
+      "severity": "required|recommended|optional"
     }
   ]
 }
 ```
 
-**Error (non-200):**
-```json
-{
-  "error": {
-    "type": "validation|timeout|auth|rate_limit|upstream_error|not_configured|internal_error|bad_model_output",
-    "message": "string"
-  }
-}
-```
+---
 
-#### Testing Mock Error Mode
+## Environment Variables Reference
 
-To test error handling in mock mode, append `?mockError=1` to the API URL:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEMINI_API_KEY` | Yes* | Google Gemini API key |
+| `GROQ_API_KEY` | Yes* | Groq API key (if using Groq) |
+| `LLM_PROVIDER` | No | `gemini` or `groq` (default: `gemini`) |
+| `GEMINI_MODEL` | No | Gemini model name (default: `gemini-2.0-flash-exp`) |
+| `GROQ_MODEL` | No | Groq model name |
+| `SITE_PASSWORD` | No | Enables password protection |
+| `DISABLE_PASSWORD_GATE` | No | Set to `1` to disable password gate |
+| `USE_MOCK` | No | Set to `1` for mock mode (no API calls) |
+| `MAINTENANCE_MODE` | No | Set to `1` to disable the service |
+| `RATE_GLOBAL_RPM` | No | Global rate limit per minute (default: `9`) |
+| `RATE_USER_30S` | No | Per-user rate limit per 30s (default: `1`) |
+| `RATE_USER_RPD` | No | Per-user daily limit (default: `20`) |
+| `UPSTASH_REDIS_REST_URL` | No | Upstash Redis URL for rate limiting |
+| `UPSTASH_REDIS_REST_TOKEN` | No | Upstash Redis token |
 
-```bash
-curl -X POST http://localhost:3000/api/rewrite?mockError=1 \
-  -H "Content-Type: application/json" \
-  -d '{"text": "test"}'
-```
+*One of `GEMINI_API_KEY` or `GROQ_API_KEY` is required unless `USE_MOCK=1`.
 
-This returns HTTP 504 with a timeout error for UI testing.
-
-## Manual Testing Plan
-
-### 1. Mock Mode - Success
-
-1. Set `USE_MOCK=1` in `.env.local`
-2. Start the dev server: `npm run dev`
-3. Open the app in browser
-4. Enter text containing: "teh recieve occured  with  double  spaces"
-5. Click "Apply Chicago Style"
-6. **Expected**: Revised text with corrections, 3-4 changes listed
-
-### 2. Mock Mode - Error (504)
-
-1. Set `USE_MOCK=1` in `.env.local`
-2. Start the dev server
-3. Open browser DevTools → Network tab
-4. Enter any text and click "Apply Chicago Style"
-5. Before request completes, modify the request URL to add `?mockError=1`
-   - Or use curl: `curl -X POST http://localhost:3000/api/rewrite?mockError=1 -H "Content-Type: application/json" -d '{"text":"test"}'`
-6. **Expected**: HTTP 504 response, error message displayed in UI
-
-### 3. Real Mode - Missing API Key
-
-1. Remove or comment out `GEMINI_API_KEY` in `.env.local`
-2. Remove or set `USE_MOCK=0` in `.env.local`
-3. Restart dev server
-4. Enter text and click "Apply Chicago Style"
-5. **Expected**: HTTP 500 error with "not_configured" type, error message in UI
-
-### 4. Real Mode - Timeout
-
-1. Set `USE_MOCK=0` and `GEMINI_API_KEY=invalid-key` (or use a valid key)
-2. The API has a 90-second timeout configured
-3. Enter text and click "Apply Chicago Style"
-4. **Expected**: HTTP 504 timeout error after 90 seconds if the request takes too long
-
-### 5. Validation Errors
-
-1. Leave textarea empty, click "Apply Chicago Style"
-2. **Expected**: Client-side validation error
-
-3. Enter text > 4000 characters, click "Apply Chicago Style"
-4. **Expected**: HTTP 400 validation error from API
-
-## Project Structure
-
-```
-.
-├── app/
-│   ├── api/
-│   │   └── rewrite/
-│   │       └── route.ts          # API endpoint (MOCK/REAL modes)
-│   ├── globals.css                # Global styles
-│   ├── layout.tsx                 # Root layout
-│   └── page.tsx                   # Main UI component
-├── types.ts                       # TypeScript type definitions
-├── tailwind.config.js             # Tailwind configuration
-├── next.config.js                  # Next.js configuration
-├── package.json                    # Dependencies
-└── README.md                       # This file
-```
-
-## Technology Stack
-
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Icons**: Lucide React
-- **AI**: Google Gemini API (gemini-2.0-flash-exp by default)
+---
 
 ## License
 
-Private project.
-
-
-
-## Access Control (Password Gate)
-This application handles sensitive or beta features protected by a password gate.
-
-### Setup
-1. Define the password in your environment variables (`.env.local` or Vercel dashboard):
-   ```bash
-   SITE_PASSWORD=your_secure_password
-   ```
-
-2. (Optional) To disable the password gate mostly for local development:
-   ```bash
-   DISABLE_PASSWORD_GATE=1
-   ```
-
-### How it works
-- **Middleware**: Intercepts requests to `/` and protects them.
-- **Cookie**: Successful login sets a `cms_auth` HttpOnly cookie valid for 30 days.
-- **API Protection**: Direct calls to `/api/rewrite` also require the auth cookie.
+Private project. All rights reserved.
