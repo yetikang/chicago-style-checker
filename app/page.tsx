@@ -28,14 +28,14 @@ function renderRevisedText(
 
   // Find positions of each change in the text
   const changePositions: Array<{ start: number; end: number; change: Change }> = []
-  
+
   // Debug logging (only in development - check if we're in dev mode)
   const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-  
+
   if (isDev) {
     console.log(`[Highlight] Processing ${changes.length} changes in text of length ${text.length}`)
   }
-  
+
   changes.forEach(change => {
     // Prefer server-side offsets if available
     if (change.loc) {
@@ -53,22 +53,22 @@ function renderRevisedText(
         return // Skip to next change
       }
     }
-    
+
     // Fallback to string matching if no server-side offset
     const searchText = change.after.trim()
     const normalizedSearchText = normalizeForMatching(searchText)
-    
+
     // Build full context pattern: context_before + after + context_after
     const contextBefore = change.context_before.trim()
     const contextAfter = change.context_after.trim()
     const fullPattern = (contextBefore + ' ' + searchText + ' ' + contextAfter).trim()
     const normalizedPattern = normalizeForMatching(fullPattern)
-    
+
     // Try to find the change using full context pattern first (most reliable)
     let found = false
     let matchIndex = -1
     let matchLength = searchText.length
-    
+
     // Strategy 1: Try to find the full context pattern
     if (fullPattern.length > searchText.length && text.includes(fullPattern)) {
       const patternIndex = text.indexOf(fullPattern)
@@ -80,84 +80,84 @@ function renderRevisedText(
         found = true
       }
     }
-    
+
     // Strategy 2: Search for "after" text, then validate with normalized context
     if (!found) {
       const normalizedContextBefore = normalizeForMatching(contextBefore)
       const normalizedContextAfter = normalizeForMatching(contextAfter)
-      
+
       // Try multiple search approaches
       const searchVariants = [
         searchText, // Original
         normalizedSearchText, // Normalized
         searchText.toLowerCase(), // Lowercase
       ]
-      
+
       for (const searchVariant of searchVariants) {
         let searchStart = 0
         while (searchStart < text.length) {
           const index = text.toLowerCase().indexOf(searchVariant.toLowerCase(), searchStart)
           if (index === -1) break
-          
+
           // Get surrounding context
           const beforeText = text.substring(Math.max(0, index - Math.max(contextBefore.length, 40)), index)
           const afterText = text.substring(index + searchVariant.length, index + searchVariant.length + Math.max(contextAfter.length, 40))
-          
+
           // Normalize and compare
           const normalizedBefore = normalizeForMatching(beforeText)
           const normalizedAfter = normalizeForMatching(afterText)
-          
-          const contextBeforeMatch = contextBefore.length === 0 || 
+
+          const contextBeforeMatch = contextBefore.length === 0 ||
             normalizedBefore.endsWith(normalizedContextBefore.slice(-Math.min(normalizedContextBefore.length, 25)))
-          const contextAfterMatch = contextAfter.length === 0 || 
+          const contextAfterMatch = contextAfter.length === 0 ||
             normalizedAfter.startsWith(normalizedContextAfter.slice(0, Math.min(normalizedContextAfter.length, 25)))
-          
+
           if (contextBeforeMatch && contextAfterMatch) {
             matchIndex = index
             matchLength = searchText.length // Use original length
             found = true
             break
           }
-          
+
           searchStart = index + 1
         }
         if (found) break
       }
     }
-    
+
     // Strategy 3: Fallback to simple search with normalized context validation
     if (!found) {
       let searchStart = 0
       while (searchStart < text.length) {
         const index = text.indexOf(searchText, searchStart)
         if (index === -1) break
-        
+
         // Check context with normalization
         const beforeText = text.substring(Math.max(0, index - Math.max(contextBefore.length, 30)), index)
         const afterText = text.substring(index + searchText.length, index + searchText.length + Math.max(contextAfter.length, 30))
-        
+
         const normalizedBefore = normalizeForMatching(beforeText)
         const normalizedAfter = normalizeForMatching(afterText)
         const normalizedContextBefore = normalizeForMatching(contextBefore)
         const normalizedContextAfter = normalizeForMatching(contextAfter)
-        
+
         // Match if normalized context is close enough
-        const contextBeforeMatch = contextBefore.length === 0 || 
+        const contextBeforeMatch = contextBefore.length === 0 ||
           normalizedBefore.endsWith(normalizedContextBefore.slice(-Math.min(normalizedContextBefore.length, 20)))
-        const contextAfterMatch = contextAfter.length === 0 || 
+        const contextAfterMatch = contextAfter.length === 0 ||
           normalizedAfter.startsWith(normalizedContextAfter.slice(0, Math.min(normalizedContextAfter.length, 20)))
-        
+
         if (contextBeforeMatch && contextAfterMatch) {
           matchIndex = index
           matchLength = searchText.length
           found = true
           break
         }
-        
+
         searchStart = index + 1
       }
     }
-    
+
     if (found && matchIndex !== -1) {
       changePositions.push({
         start: matchIndex,
@@ -165,7 +165,7 @@ function renderRevisedText(
         change
       })
       locatedChangeIds.add(change.change_id)
-      
+
       if (isDev) {
         console.log(`[Highlight] Found change ${change.change_id} at index ${matchIndex}: "${text.substring(matchIndex, matchIndex + matchLength)}"`)
       }
@@ -182,7 +182,7 @@ function renderRevisedText(
   // Remove overlapping changes (keep first one)
   const nonOverlapping: Array<{ start: number; end: number; change: Change }> = []
   let lastEnd = 0
-  
+
   changePositions.forEach(pos => {
     if (pos.start >= lastEnd) {
       nonOverlapping.push(pos)
@@ -206,6 +206,18 @@ function renderRevisedText(
 
     // Add the changed text with highlight
     const isActive = activeChangeId === change.change_id
+
+    // Add strikethrough for the original text
+    nodes.push(
+      <span
+        key={`${change.change_id}-diff-${start}`}
+        className="line-through text-red-300 opacity-70 mr-1 select-none"
+        aria-hidden="true"
+      >
+        {change.before}
+      </span>
+    )
+
     nodes.push(
       <span
         key={`${change.change_id}-${start}`}
@@ -228,37 +240,47 @@ function renderRevisedText(
 }
 
 export default function Home() {
+  const [isQueued, setIsQueued] = useState(false)
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
   const [inputText, setInputText] = useState('')
-  const [result, setResult] = useState<RewriteResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showHighlights, setShowHighlights] = useState(true)
+  const [result, setResult] = useState<RewriteResponse | null>(null)
   const [activeChangeId, setActiveChangeId] = useState<string | null>(null)
+  const [showHighlights, setShowHighlights] = useState(true)
+
+  // Keep track of the latest input text to use when excessive debouncing fires
+  const latestInputTextRef = useRef(inputText)
+  // Update ref whenever text changes
+  if (latestInputTextRef.current !== inputText) {
+    latestInputTextRef.current = inputText
+  }
 
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const handleApply = async () => {
-    // Prevent multiple in-flight requests
-    if (loading) {
-      return
-    }
+  const performRewrite = async () => {
+    // Prevent multiple in-flight requests (double-check)
+    if (loading) return
 
-    if (!inputText.trim()) {
+    const textToSend = latestInputTextRef.current
+    if (!textToSend.trim()) {
       setError('Please enter some text to edit.')
+      setIsQueued(false)
       return
     }
 
-    // Cancel any previous request
+    // Cancel any previous request logic
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
 
     setLoading(true)
+    setIsQueued(false) // No longer queued, now processing
     setError(null)
     setResult(null)
     setActiveChangeId(null)
 
-    // Create new AbortController for this request
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
@@ -273,7 +295,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: inputText }),
+        body: JSON.stringify({ text: textToSend }),
         signal: abortController.signal,
       })
 
@@ -320,6 +342,32 @@ export default function Home() {
     }
   }
 
+  const handleApply = () => {
+    // If we're already loading, do nothing (or queue?)
+    // Simplest: ignore clicks while actually processing
+    if (loading) return
+
+    // Clear existing debounce timer
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current)
+    }
+
+    setIsQueued(true)
+    setError(null) // Clear previous errors when queuing
+
+    // Schedule new request
+    debounceTimeoutRef.current = setTimeout(() => {
+      performRewrite()
+    }, 1200)
+  }
+
+  // Clean up timeout on unmount
+  useMemo(() => {
+    return () => {
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)
+    }
+  }, [])
+
   const handleCopy = () => {
     if (result?.revised_text) {
       navigator.clipboard.writeText(result.revised_text)
@@ -331,6 +379,8 @@ export default function Home() {
     setResult(null)
     setError(null)
     setActiveChangeId(null)
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)
+    setIsQueued(false)
   }
 
   // Compute located change IDs separately
@@ -399,10 +449,12 @@ export default function Home() {
           </div>
         )}
 
-        {/* Loading state */}
-        {loading && (
-          <div className="mb-6 p-4 bg-gray-50 border border-gray-200 text-gray-700 rounded-sm">
-            Processing your text...
+        {/* Loading/Queued state */}
+        {(loading || isQueued) && (
+          <div className="mb-6 p-4 bg-gray-50 border border-gray-200 text-gray-700 rounded-sm transition-all duration-300">
+            {isQueued
+              ? 'Queued... (Waiting for typing to stop)'
+              : 'Processing your text...'}
           </div>
         )}
 
@@ -424,7 +476,7 @@ export default function Home() {
                 Clear
               </button>
             </div>
-            
+
             {/* Textarea */}
             <textarea
               value={inputText}
@@ -432,14 +484,19 @@ export default function Home() {
               placeholder="Paste a paragraph to edit…"
               className="w-full flex-1 min-h-[18rem] p-5 border border-gray-200 rounded font-serif text-gray-900 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-gray-400 focus:border-gray-300 mb-4 text-base"
             />
-            
+
             {/* Apply Chicago Style button */}
             <button
               onClick={handleApply}
               disabled={loading}
-              className="w-full px-6 py-3 bg-brand-red text-white rounded hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-normal text-base"
+              className={`w-full px-6 py-3 rounded text-white font-normal text-base transition-colors ${loading
+                ? 'bg-gray-400 cursor-not-allowed'
+                : isQueued
+                  ? 'bg-brand-red opacity-80'
+                  : 'bg-brand-red hover:bg-brand-red-dark'
+                }`}
             >
-              {loading ? 'Processing...' : 'Apply Chicago Style'}
+              {loading ? 'Processing...' : isQueued ? 'Queued...' : 'Apply Chicago Style'}
             </button>
           </div>
 
@@ -480,7 +537,7 @@ export default function Home() {
                 )}
               </div>
             </div>
-            
+
             {/* Revised text display */}
             <div className="w-full flex-1 min-h-[18rem] p-5 border border-gray-200 rounded font-serif text-gray-900 leading-relaxed bg-white overflow-y-auto text-base">
               {result ? (
@@ -495,52 +552,64 @@ export default function Home() {
         </div>
 
         {/* Changes list */}
-        {result && result.changes.length > 0 && (
+        {/* Changes list */}
+        {result && (
           <div className="mt-10">
             <h2 className="text-lg font-serif font-normal mb-4 text-gray-900">
               Changes
             </h2>
-            <ul className="space-y-2.5">
-              {result.changes.map((change) => {
-                const isLocated = locatedChangeIdsMemo.has(change.change_id)
-                return (
-                  <li
-                    key={change.change_id}
-                    onMouseEnter={() => {
-                      if (isLocated) {
-                        setActiveChangeId(change.change_id)
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      if (isLocated) {
-                        setActiveChangeId(null)
-                      }
-                    }}
-                    className={`p-3 border-l border-gray-200 transition-colors ${
-                      isLocated
+            {result.changes.length > 0 ? (
+              <ul className="space-y-2.5">
+                {result.changes.map((change) => {
+                  const isLocated = locatedChangeIdsMemo.has(change.change_id)
+                  return (
+                    <li
+                      key={change.change_id}
+                      onMouseEnter={() => {
+                        if (isLocated) {
+                          setActiveChangeId(change.change_id)
+                        }
+                      }}
+                      onMouseLeave={() => {
+                        if (isLocated) {
+                          setActiveChangeId(null)
+                        }
+                      }}
+                      className={`p-3 border-l border-gray-200 transition-colors ${isLocated
                         ? 'hover:border-gray-400 hover:bg-gray-50 cursor-pointer'
                         : 'opacity-60 cursor-default'
-                    } ${
-                      activeChangeId === change.change_id ? 'border-gray-400 bg-gray-50' : ''
-                    }`}
-                    title={!isLocated ? 'Could not locate this change in the revised text' : undefined}
-                  >
-                    <div className="text-sm text-gray-900">
-                      <span className="font-normal">
-                        [{change.type}] {change.before} → {change.after}
-                      </span>
-                      {!isLocated && (
-                        <span className="ml-2 text-xs text-gray-500 italic">(unlocated)</span>
-                      )}
-                      <span className="ml-2 text-gray-600">{change.reason}</span>
-                      {change.severity !== 'required' && (
-                        <span className="ml-2 text-xs text-gray-500">({change.severity})</span>
-                      )}
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+                        } ${activeChangeId === change.change_id ? 'border-gray-400 bg-gray-50' : ''
+                        }`}
+                      title={!isLocated ? 'Could not locate this change in the revised text' : undefined}
+                    >
+                      <div className="text-sm text-gray-900">
+                        <span className="font-normal">
+                          [{change.type}] {change.before} → {change.after}
+                        </span>
+                        {!isLocated && (
+                          <span className="ml-2 text-xs text-gray-500 italic">(unlocated)</span>
+                        )}
+                        <span className="ml-2 text-gray-600">{change.reason}</span>
+                        {change.severity !== 'required' && (
+                          <span className="ml-2 text-xs text-gray-500">({change.severity})</span>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-sm text-green-900">
+                <div className="flex-shrink-0">
+                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="font-serif text-sm">
+                  Your text is correct according to Chicago Style.
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

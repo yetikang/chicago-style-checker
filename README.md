@@ -50,6 +50,19 @@ npm run build
 npm start
 ```
 
+## Authentication
+
+This site is protected by a simple password gate.
+
+### Configuration
+1.  **Set the Password**: Add `SITE_PASSWORD` to your environment variables.
+2.  **Disable Gate**: Set `DISABLE_PASSWORD_GATE=1` to bypass authentication.
+
+### How it Works
+- Unauthenticated users are redirected to `/unlock`.
+- Entering the correct password sets a `cms_auth` cookie (30-day expiry).
+- API routes (except `/api/rewrite`) are public. `/api/rewrite` is protected.
+
 ## Environment Variables
 
 ### `USE_MOCK`
