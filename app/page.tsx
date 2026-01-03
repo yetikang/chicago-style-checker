@@ -448,9 +448,14 @@ export default function Home() {
               Chicago Style Checker
             </h1>
           </div>
-          <div className="text-sm text-gray-600 font-serif">
+          <a
+            href="https://www.chicagomanualofstyle.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-gray-600 font-serif hover:text-brand-red transition-colors"
+          >
             CMoS 17th Edition
-          </div>
+          </a>
         </div>
 
         {/* Subtle divider */}
