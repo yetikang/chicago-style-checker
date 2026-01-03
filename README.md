@@ -1,145 +1,73 @@
 # Chicago Style Checker
 
-A web-based copyediting tool that applies the **Chicago Manual of Style (CMoS)** to your writing. Paste a paragraph, and get instant, AI-powered corrections with detailed explanations.
+An experimental academic writing tool for **technical and stylistic revisions**
+aligned with the *Chicago Manual of Style (17th edition)*.
 
-![CMoS 17th Edition](https://img.shields.io/badge/CMoS-17th_Edition-8B0000)
-![Next.js](https://img.shields.io/badge/Next.js-14-black)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
-
----
-
-## Features
-
-- **Instant Corrections** — Submit a paragraph and receive Chicago-style edits in seconds
-- **Visual Diff Highlights** — See exactly what changed with inline strikethrough and color-coded corrections
-- **Detailed Explanations** — Each edit includes the rule category, before/after text, and reasoning
-- **Hover-to-Locate** — Hover over any change in the list to highlight its position in the revised text
-- **One-Click Copy** — Easily copy the corrected text to your clipboard
+This project focuses on formal issues such as punctuation, capitalization,
+citation phrasing, and consistency.  
+It does **not** evaluate or revise substantive content or arguments.
 
 ---
 
-## Getting Started
+## Status
 
-### Prerequisites
+🚧 **Internal testing / active development**
 
-- Node.js 18 or later
-- An LLM API key (Gemini or Groq)
-
-### Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd chicago-style-checker
-
-# Install dependencies
-npm install
-
-# Configure environment variables
-cp .env.local.example .env.local
-```
-
-### Configuration
-
-Edit `.env.local` with your settings:
-
-```bash
-# Required: LLM Provider API Key
-GEMINI_API_KEY=your-gemini-api-key    # Required if using Gemini (default)
-# GROQ_API_KEY=your-groq-api-key      # Required if using Groq
-
-# Optional: LLM Provider Selection
-# LLM_PROVIDER=gemini                 # Options: gemini | groq (default: gemini)
-
-# Optional: Password Protection
-# SITE_PASSWORD=your-password         # Enables site-wide password gate
-# DISABLE_PASSWORD_GATE=1             # Disables password for local dev
-
-# Optional: Development Mode
-# USE_MOCK=1                          # Use mock responses (no API calls)
-```
-
-### Run the Application
-
-```bash
-# Development
-npm run dev
-
-# Production
-npm run build && npm start
-```
-
-Open [http://localhost:3000](http://localhost:3000) to start editing.
+This project is under active development and may produce incomplete or
+imperfect suggestions. Feedback is essential and highly appreciated.
 
 ---
 
-## Technology Stack
+## How it works
 
-| Layer | Technology |
-|-------|------------|
-| Framework | Next.js 14 (App Router) |
-| Language | TypeScript |
-| Styling | Tailwind CSS |
-| AI Backend | Google Gemini / Groq |
-| Rate Limiting | Upstash Redis |
+The tool is currently powered by a Groq-hosted large language model:
+`llama-3.3-70b-versatile` (on-demand).
+
+Requests are processed using a free-tier API key with rate and token limits.
 
 ---
 
-## API Reference
+## What this project is (and is not)
 
-### `POST /api/rewrite`
+**It is:**
+- A technical writing assistant for Chicago-style conventions
+- An experimental, research-oriented tool
+- Open-source and community-friendly
 
-Applies Chicago Manual of Style corrections to the provided text.
-
-**Request:**
-```json
-{
-  "text": "Your paragraph here (max 4000 characters)"
-}
-```
-
-**Response:**
-```json
-{
-  "revised_text": "Corrected paragraph",
-  "changes": [
-    {
-      "change_id": "c1",
-      "type": "spelling|grammar|punctuation|...",
-      "before": "original",
-      "after": "corrected",
-      "reason": "Explanation of the change",
-      "severity": "required|recommended|optional"
-    }
-  ]
-}
-```
+**It is not:**
+- A replacement for the Chicago Manual of Style
+- A content, argument, or peer-review tool
+- Guaranteed to be fully accurate
 
 ---
 
-## Environment Variables Reference
+## Feedback
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GEMINI_API_KEY` | Yes* | Google Gemini API key |
-| `GROQ_API_KEY` | Yes* | Groq API key (if using Groq) |
-| `LLM_PROVIDER` | No | `gemini` or `groq` (default: `gemini`) |
-| `GEMINI_MODEL` | No | Gemini model name (default: `gemini-2.0-flash-exp`) |
-| `GROQ_MODEL` | No | Groq model name |
-| `SITE_PASSWORD` | No | Enables password protection |
-| `DISABLE_PASSWORD_GATE` | No | Set to `1` to disable password gate |
-| `USE_MOCK` | No | Set to `1` for mock mode (no API calls) |
-| `MAINTENANCE_MODE` | No | Set to `1` to disable the service |
-| `RATE_GLOBAL_RPM` | No | Global rate limit per minute (default: `9`) |
-| `RATE_USER_30S` | No | Per-user rate limit per 30s (default: `1`) |
-| `RATE_USER_RPD` | No | Per-user daily limit (default: `20`) |
-| `UPSTASH_REDIS_REST_URL` | No | Upstash Redis URL for rate limiting |
-| `UPSTASH_REDIS_REST_TOKEN` | No | Upstash Redis token |
+Please use the in-app **Feedback** link to report:
+- missing or unclear changes
+- incorrect suggestions
+- UI or usability issues
+- edge cases in academic writing
 
-*One of `GEMINI_API_KEY` or `GROQ_API_KEY` is required unless `USE_MOCK=1`.
+---
+
+## Contributing
+
+Contributions, discussions, and suggestions are very welcome.
+
+This project is independently developed and maintained by the author
+through an experimental process.
+The author is especially interested in hearing from contributors with
+programming or related technical experience.
+
+You are welcome to:
+- open issues
+- submit pull requests
+- suggest architectural improvements
+- discuss collaboration ideas
 
 ---
 
 ## License
 
-Private project. All rights reserved.
+MIT License

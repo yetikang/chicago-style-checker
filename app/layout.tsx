@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Chicago Style Checker',
+  title: 'Chicago Style Checker (Beta)',
   description: 'CMoS-informed paragraph-level copyediting',
 }
 
@@ -20,5 +20,3 @@ export default function RootLayout({
     </html>
   )
 }
-
-
