@@ -50,19 +50,6 @@ npm run build
 npm start
 ```
 
-## Authentication
-
-This site is protected by a simple password gate.
-
-### Configuration
-1.  **Set the Password**: Add `SITE_PASSWORD` to your environment variables.
-2.  **Disable Gate**: Set `DISABLE_PASSWORD_GATE=1` to bypass authentication.
-
-### How it Works
-- Unauthenticated users are redirected to `/unlock`.
-- Entering the correct password sets a `cms_auth` cookie (30-day expiry).
-- API routes (except `/api/rewrite`) are public. `/api/rewrite` is protected.
-
 ## Environment Variables
 
 ### `USE_MOCK`
@@ -92,6 +79,31 @@ This site is protected by a simple password gate.
 - **Default**: `gemini-2.0-flash-exp`
 - **Description**: The Gemini model to use for editing
 - **Examples**: `gemini-2.0-flash-exp`, `gemini-1.5-pro`, `gemini-1.5-flash`
+
+### Server Protections (Rate Limiting & Kill Switch)
+
+#### `MAINTENANCE_MODE`
+- **Value**: `"1"` to enable, any other value to disable.
+- **Description**: Immediately disables the rewrite endpoint with a 503 "Service temporarily unavailable" message.
+
+#### `RATE_GLOBAL_RPM`
+- **Default**: `9`
+- **Description**: Maximum expensive (Gemini) calls allowed globally per minute across all users.
+
+#### `RATE_USER_30S`
+- **Default**: `1`
+- **Description**: Maximum expensive calls allowed per user (anonymous ID) in any 30-second window.
+
+#### `RATE_USER_RPD`
+- **Default**: `20`
+- **Description**: Maximum expensive calls allowed per user per day (aligned to `RATE_TZ`).
+
+#### `RATE_TZ`
+- **Default**: `America/Los_Angeles`
+- **Description**: Timezone used for daily rate limit buckets.
+
+#### `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN`
+- **Description**: Upstash Redis credentials for production rate limiting. If missing, the system falls back to a best-effort in-memory limiter.
 
 ## API Endpoint
 
@@ -230,3 +242,22 @@ This returns HTTP 504 with a timeout error for UI testing.
 Private project.
 
 
+
+## Access Control (Password Gate)
+This application handles sensitive or beta features protected by a password gate.
+
+### Setup
+1. Define the password in your environment variables (`.env.local` or Vercel dashboard):
+   ```bash
+   SITE_PASSWORD=your_secure_password
+   ```
+
+2. (Optional) To disable the password gate mostly for local development:
+   ```bash
+   DISABLE_PASSWORD_GATE=1
+   ```
+
+### How it works
+- **Middleware**: Intercepts requests to `/` and protects them.
+- **Cookie**: Successful login sets a `cms_auth` HttpOnly cookie valid for 30 days.
+- **API Protection**: Direct calls to `/api/rewrite` also require the auth cookie.

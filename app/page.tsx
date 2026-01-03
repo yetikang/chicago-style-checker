@@ -305,8 +305,10 @@ export default function Home() {
         // Try to parse error response
         let errorMessage = 'An error occurred while processing your text.'
         let errorType = 'unknown'
+        let errorData: any = null
+
         try {
-          const errorData = await response.json()
+          errorData = await response.json()
           if (errorData.error?.message) {
             errorMessage = errorData.error.message
           }
@@ -320,7 +322,19 @@ export default function Home() {
 
         // Handle 429 rate limit with friendly message
         if (response.status === 429 || errorType === 'rate_limit') {
-          errorMessage = 'Rate limit exceeded. Please wait ~60 seconds and try again.'
+          const scope = errorData?.scope
+          const seconds = errorData?.retry_after_seconds || 60
+
+          if (scope === 'user_day') {
+            const hours = Math.ceil(seconds / 3600)
+            errorMessage = `Daily limit reached. Please try again in about ${hours} ${hours === 1 ? 'hour' : 'hours'}.`
+          } else if (scope === 'user_30s') {
+            errorMessage = `Slow down! Please wait ${seconds} seconds before your next request.`
+          } else if (scope === 'global_min') {
+            errorMessage = `Server is busy. Please try again in ${seconds} seconds.`
+          } else {
+            errorMessage = 'Rate limit reached. Please wait a moment and try again.'
+          }
         }
 
         throw new Error(errorMessage)
