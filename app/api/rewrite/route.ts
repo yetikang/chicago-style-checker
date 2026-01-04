@@ -15,6 +15,7 @@ interface ErrorResponse {
     }
 }
 
+
 // Helper to create error response
 function errorResponse(
     status: number,
@@ -68,268 +69,80 @@ function generateCacheKey(text: string, mode: string, provider: string): string 
     return `${hash}_${mode}_${provider}_${PROMPT_VERSION}`
 }
 
-// --- Robust Location Logic with Ambiguity Handling ---
-
-// Normalize string for matching (handles whitespace, quotes, etc.)
-function normalizeForMatching(str: string): string {
-    return str
-        .replace(/\s+/g, ' ') // Normalize all whitespace to single space
-        .replace(/[""]/g, '"') // Normalize smart quotes to straight quotes
-        .replace(/['']/g, "'") // Normalize smart apostrophes
-        .replace(/[–—]/g, '-') // Normalize en/em dashes to hyphen
-        .trim()
-}
-
-// Helpers for context matching scores
-function normalizeForContext(str: string): string {
-    // Aggressive normalization: remove ALL non-alphanumeric chars
-    return str.replace(/[^a-z0-9]/gi, '').toLowerCase()
-}
-
-function getContextScore(text: string, anchorStr: string, isStart: boolean): number {
-    if (!anchorStr) return 0.5 // Neutral score for empty context matches (technically a match)
-
-    const normalizedAnchor = normalizeForContext(anchorStr)
-        // take only last 25 chars for before-context, first 25 for after-context
-        .slice(isStart ? -25 : 0, isStart ? undefined : 25)
-
-    if (!normalizedAnchor) return 0.5 // If context was only punctuation, ignore it
-
-    const normalizedText = normalizeForContext(text)
-
-    if (isStart) {
-        if (normalizedText.endsWith(normalizedAnchor)) return 1.0
-    } else {
-        if (normalizedText.startsWith(normalizedAnchor)) return 1.0
-    }
-
-    return 0.0
-}
-
-// Robustly locate a single change in the final text with ambiguity handling
-function locateChangeInText(text: string, change: Change): { start: number; end: number } | null {
-    const searchText = change.after.trim()
-    if (!searchText) {
-        return null
-    }
-
-    const normalizedSearchText = normalizeForMatching(searchText)
-    const contextBefore = change.context_before.trim()
-    const contextAfter = change.context_after.trim()
-
-    // Find all candidate indices
-    const candidates: { index: number; score: number; length: number }[] = []
-
-    // 1. Exact string search
-    let searchStart = 0
-    while (searchStart < text.length) {
-        const idx = text.indexOf(searchText, searchStart)
-        if (idx === -1) break
-
-        // Score this candidate
-        // Extract context from text around this candidate
-        const textBefore = text.substring(Math.max(0, idx - 40), idx)
-        const textAfter = text.substring(idx + searchText.length, idx + searchText.length + 40)
-
-        const scoreBefore = getContextScore(textBefore, contextBefore, true)
-        const scoreAfter = getContextScore(textAfter, contextAfter, false)
-
-        candidates.push({
-            index: idx,
-            score: scoreBefore + scoreAfter + 1.0, // +1 for exact text match
-            length: searchText.length
-        })
-
-        searchStart = idx + 1
-    }
-
-    // 2. Normalized fallback search
-    const idealMatch = candidates.find(c => c.score >= 3.0)
-    if (idealMatch) {
-        return { start: idealMatch.index, end: idealMatch.index + idealMatch.length }
-    }
-
-    // If no good exact matches, try normalized/fuzzy search
-    const searchCandidates = [searchText, normalizedSearchText, searchText.toLowerCase()]
-    const uniqueSearchStrings = Array.from(new Set(searchCandidates)).filter(s => s && s !== searchText)
-
-    for (const variant of uniqueSearchStrings) {
-        searchStart = 0
-        while (searchStart < text.length) {
-            const idx = text.toLowerCase().indexOf(variant.toLowerCase(), searchStart)
-            if (idx === -1) break
-
-            const matchLen = variant.length
-            const textBefore = text.substring(Math.max(0, idx - 40), idx)
-            const textAfter = text.substring(idx + matchLen, idx + matchLen + 40)
-
-            const scoreBefore = getContextScore(textBefore, contextBefore, true)
-            const scoreAfter = getContextScore(textAfter, contextAfter, false)
-
-            candidates.push({
-                index: idx,
-                score: scoreBefore + scoreAfter + 0.8, // 0.8 for fuzzy match
-                length: matchLen
-            })
-            searchStart = idx + 1
-        }
-    }
-
-    if (candidates.length === 0) return null
-
-    // Sort by score descending
-    candidates.sort((a, b) => b.score - a.score)
-
-    const best = candidates[0]
-
-    // Safety threshold: if score is too low, we might be matching random common words
-    if (best.score < 2.0) {
-        if (DEBUG_LOC) console.log(`[Locate] Rejecting low confidence match for "${searchText}": score ${best.score}`)
-        // Let's accept it but log it.
-    }
-
-    return { start: best.index, end: best.index + best.length }
-}
-
-function recalculateAllLocations(text: string, changes: Change[]): Change[] {
-    const result = changes.map(change => {
-        if (!change.after || !change.after.trim()) return change;
-
-        const loc = locateChangeInText(text, change)
-        if (loc) {
-            return { ...change, loc }
-        }
-
-        const { loc: _, ...rest } = change
-        return rest as Change
-    })
-    return result
-}
-
-
-// --- Diff Fallback Logic ---
-function computeMissingChanges(originalText: string, revisedText: string, existingChanges: Change[]): Change[] {
-    const dmp = new DiffMatchPatch()
-    const diffs = dmp.diff_main(originalText, revisedText)
-    dmp.diff_cleanupSemantic(diffs)
-
-    const newChanges: Change[] = []
-    let currentPos = 0 // Position in revisedText
-
-    // We need to check if a diff is "covered" by an existing change
-    // An existing change "covers" a range [start, end] in revisedText.
-
-    // First, map existing changes to coverage intervals in revisedText
-    const coverageIntervals: { start: number, end: number }[] = []
-    existingChanges.forEach(c => {
-        if (c.loc) {
-            coverageIntervals.push({ start: c.loc.start, end: c.loc.end })
-        }
-    })
-
-    // Simple interval check helper
-    const isCovered = (start: number, end: number) => {
-        // We consider it covered if it overlaps significantly with any existing change
-        // Or even simpler: if the center point is inside a change? 
-        // Let's go with: if ANY part of it overlaps, we assume the LLM intended it.
-        // Actually, we want to catch *missed* things.
-        // If the diff is "inserted text", check if that text range is inside a known change range.
-        if (start >= end) return true // empty range
-        return coverageIntervals.some(interval => {
-            return (start < interval.end && end > interval.start)
-        })
-    }
-
-    let autoCount = 1
-
-    diffs.forEach(([operation, text]: [number, string]) => {
-        if (operation === 0) { // EQUAL
-            currentPos += text.length
-        } else if (operation === 1) { // INSERT (Text in Revised but not Original)
-            const start = currentPos
-            const end = currentPos + text.length
-
-            if (!isCovered(start, end)) {
-                // Found an insertion not covered by LLM changes!
-                // We need context to help locating (though we know the exact pos, the system needs context objects)
-                const contextBefore = revisedText.substring(Math.max(0, start - 20), start)
-                const contextAfter = revisedText.substring(end, Math.min(revisedText.length, end + 20))
-
-                newChanges.push({
-                    change_id: `auto_${Date.now()}_${autoCount++}`,
-                    type: 'other',
-                    before: '',
-                    after: text,
-                    reason: 'Auto-detected change',
-                    severity: 'recommended',
-                    context_before: contextBefore,
-                    context_after: contextAfter,
-                    loc: { start, end }
-                })
-            }
-            currentPos += text.length
-        } else if (operation === -1) { // DELETE (Text in Original but not Revised)
-            // We process deletions but skip creating explicit changes for them
-            // as they are hard to visualize in the current UI without 'after' content.
-        }
-    })
-
-    return newChanges
-}
-
-
 // --- Cheap Rules Engine ---
 function applyCheapRules(text: string): { revisedText: string; changes: Change[] } {
     let revised = text
     const changes: Change[] = []
-    let ruleChangeCounter = 1
+    let changeIdCounter = 1
 
     // Helper to apply regex replacement and track changes
     function applyRegexRule(
         regex: RegExp,
         replacementFn: (match: RegExpExecArray) => string,
         type: Change['type'],
-        reason: string
+        reason: string,
+        getContext?: (text: string, index: number) => { before: string; after: string }
     ) {
         let match
-        // Reset regex index
         regex.lastIndex = 0
-        const matches: { index: number; length: number; before: string; after: string }[] = []
+        const matches: { index: number; length: number; before: string; after: string; contextBefore: string; contextAfter: string }[] = []
+
         while ((match = regex.exec(revised)) !== null) {
             const before = match[0]
             const after = replacementFn(match)
             if (before !== after) {
-                matches.push({ index: match.index, length: before.length, before, after })
+                const ctx = getContext ? getContext(revised, match.index) : { before: '', after: '' }
+                matches.push({
+                    index: match.index,
+                    length: before.length,
+                    before,
+                    after,
+                    contextBefore: ctx.before,
+                    contextAfter: ctx.after
+                })
             }
         }
-        matches.sort((a, b) => b.index - a.index)
+
         for (const m of matches) {
-            const contextBefore = revised.substring(Math.max(0, m.index - 20), m.index)
-            const contextAfter = revised.substring(m.index + m.length, Math.min(revised.length, m.index + m.length + 20))
             revised = revised.substring(0, m.index) + m.after + revised.substring(m.index + m.length)
+
             changes.push({
-                change_id: `c${ruleChangeCounter++}`,
-                type, before: m.before, after: m.after, reason, severity: 'recommended',
-                context_before: contextBefore, context_after: contextAfter,
-                loc: { start: m.index, end: m.index + m.after.length }
+                change_id: `c${changeIdCounter++}`,
+                type,
+                severity: 'recommended',
+                reason,
+                before: m.before,
+                after: m.after,
+                context_before: m.contextBefore,
+                context_after: m.contextAfter
             })
         }
     }
 
+    // Default context extractor
+    const getDefaultContext = (text: string, index: number) => ({
+        before: text.substring(Math.max(0, index - 30), index),
+        after: text.substring(index, Math.min(text.length, index + 30))
+    })
+
     // Rules:
-    applyRegexRule(/\s?--\s?/g, (m) => '—', 'punctuation', 'Chicago Style uses em dashes (—) without surrounding spaces.')
+    applyRegexRule(/\s?--\s?/g, (m) => '—', 'punctuation', 'Em-dash spacing adjustment.', getDefaultContext)
+
     // Spelling
     const commonTypos = [['definately', 'definitely'], ['seperately', 'separately'], ['occured', 'occurred'], ['recieve', 'receive'], ['teh', 'the']]
     for (const [typo, fix] of commonTypos) {
         applyRegexRule(new RegExp(`\\b${typo}\\b`, 'gi'), (m) => {
-            const original = m[0]; return (original[0] && original[0] === original[0].toUpperCase()) ? fix.charAt(0).toUpperCase() + fix.slice(1) : fix
-        }, 'spelling', `Corrected spelling: '${typo}' should be '${fix}'.`)
+            const original = m[0]
+            return (original[0] && original[0] === original[0].toUpperCase()) ? fix.charAt(0).toUpperCase() + fix.slice(1) : fix
+        }, 'spelling', `Corrected spelling: '${typo}' should be '${fix}'.`, getDefaultContext)
     }
+
     // Quotes
-    applyRegexRule(/"(?=\w)/g, () => '“', 'punctuation', 'Use smart quotes.')
-    applyRegexRule(/(?<=\w)"/g, () => '”', 'punctuation', 'Use smart quotes.')
+    applyRegexRule(/\"(?=\w)/g, () => '"', 'punctuation', 'Use smart quotes.', getDefaultContext)
+    applyRegexRule(/(?<=\w)\"/g, () => '"', 'punctuation', 'Use smart quotes.', getDefaultContext)
+
     // Double spaces
-    applyRegexRule(/ {2,}/g, () => ' ', 'other', 'Use single spaces between sentences.')
+    applyRegexRule(/ {2,}/g, () => ' ', 'spacing', 'Use single spaces between sentences.', getDefaultContext)
 
     return { revisedText: revised, changes }
 }
@@ -344,13 +157,32 @@ async function mockRewrite(text: string): Promise<RewriteResponse> {
     return { revised_text: revisedText, changes }
 }
 
-const SYSTEM_PROMPT = `You are an expert editor specializing in The Chicago Manual of Style (17th edition).
-Your task is to review the user's text and provide a JSON response containing the fully revised text and a list of specific changes.
+const SYSTEM_PROMPT = `You are a technical editor for The Chicago Manual of Style (17th edition).
+Your task is to identify and apply technical Chicago-style revisions to the user's text.
+
+STRICT SCOPE:
+- Punctuation (e.g., em-dashes, smart quotes, comma placement)
+- Spacing (e.g., single spaces between sentences)
+- Capitalization (e.g., proper nouns, titles)
+- Quotation and bracket placement
+- Grammar fixes explicitly justified by Chicago style
+
+DO NOT:
+- Perform stylistic paraphrasing or content-level rewrites.
+- Change the author's voice or word choice unless it is technically incorrect under Chicago style.
+- Add, remove, or summarize information.
+
+IDEMPOTENCY CONTRACT:
+- The goal is BATCH NORMALIZATION. 
+- You must identify ALL technical issues in a single pass.
+- If the text is already technically correct, return the same text and an empty changes array.
+- Re-running your output through this process should result in ZERO changes.
+
 JSON Structure:
 {
   "revised_text": "...",
   "changes": [
-    { "change_id": "c1", "type": "spelling"|"punctuation"|"grammar"|"style"|"other", "before": "...", "after": "...", "reason": "...", "severity": "required"|"recommended"|"uncertain", "context_before": "...", "context_after": "..." }
+    { "change_id": "c1", "type": "spelling"|"punctuation"|"grammar"|"capitalization"|"spacing"|"hyphenation"|"numbers"|"other", "before": "...", "after": "...", "reason": "...", "severity": "required"|"recommended", "context_before": "...", "context_after": "..." }
   ]
 }`
 
@@ -360,10 +192,23 @@ function parseResponse(textResponse: string): RewriteResponse {
         cleanText = cleanText.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '')
     }
     const json = JSON.parse(cleanText)
-    if (json.changes && Array.isArray(json.changes)) {
-        json.changes = json.changes.filter((c: Change) => c.before !== c.after)
+    const changes = (json.changes && Array.isArray(json.changes)) ? json.changes
+        .filter((c: any) => (c.before || '') !== (c.after || ''))
+        .map((c: any) => ({
+            change_id: c.change_id || c.id || `c${Math.random().toString(36).substr(2, 9)}`,
+            type: c.type || 'other',
+            severity: c.severity || 'recommended',
+            reason: c.reason || 'Professional refinement.',
+            before: c.before || '',
+            after: c.after || '',
+            context_before: c.context_before || '',
+            context_after: c.context_after || ''
+        })) : []
+
+    return {
+        revised_text: json.revised_text || '',
+        changes: changes as Change[]
     }
-    return json as RewriteResponse
 }
 
 async function realRewriteGemini(text: string): Promise<RewriteResponse> {
@@ -392,43 +237,126 @@ async function realRewriteGroq(text: string): Promise<RewriteResponse> {
     } catch (error) { console.error("Groq API Error:", error); throw error }
 }
 
-// Deduplication Helper
-function deduplicateChanges(changes: Change[]): Change[] {
-    const seen = new Set<string>()
-    return changes.filter(c => {
-        // Check if covered by another change with SAME textual effect but better reason?
-        // For now simple duplicate check
-        const normReason = c.reason.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 50)
-        const key = `${c.type}|${c.before}|${c.after}|${normReason}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
+
+// --- Robust Location Logic ---
+
+function normalizeForContext(str: string): string {
+    return str.replace(/[^a-z0-9]/gi, '').toLowerCase()
+}
+
+function getContextScore(text: string, anchorStr: string, isStart: boolean): number {
+    if (!anchorStr) return 0.5
+    const normalizedAnchor = normalizeForContext(anchorStr)
+    const normalizedText = normalizeForContext(text)
+
+    if (isStart) {
+        // Longest common suffix
+        let score = 0
+        for (let i = 1; i <= Math.min(normalizedAnchor.length, normalizedText.length, 30); i++) {
+            if (normalizedAnchor.slice(-i) === normalizedText.slice(-i)) {
+                score = i
+            } else {
+                break
+            }
+        }
+        return score
+    } else {
+        // Longest common prefix
+        let score = 0
+        for (let i = 1; i <= Math.min(normalizedAnchor.length, normalizedText.length, 30); i++) {
+            if (normalizedAnchor.slice(0, i) === normalizedText.slice(0, i)) {
+                score = i
+            } else {
+                break
+            }
+        }
+        return score
+    }
+}
+
+function locateChangeInText(text: string, change: Change): { start: number; end: number } | null {
+    const searchText = change.after.trim()
+
+    // If it's a deletion (empty after), we look for the insertion point between context_before and context_after
+    if (!searchText) {
+        const cb = change.context_before.trim()
+        const ca = change.context_after.trim()
+        if (!cb && !ca) return null
+
+        // Try to find the transition point
+        let bestIdx = -1
+        let bestScore = -1
+
+        // Simple approach: search for the concat of context
+        const searchContext = (cb.slice(-15) + ca.slice(0, 15)).trim()
+        if (searchContext) {
+            let startSearch = 0
+            while (startSearch < text.length) {
+                const idx = text.indexOf(searchContext, startSearch)
+                if (idx === -1) break
+                // The gap is likely at idx + length of cb part
+                const gapIdx = idx + cb.slice(-15).trimEnd().length
+                return { start: gapIdx, end: gapIdx }
+            }
+        }
+        return null
+    }
+
+    const candidates: { index: number; score: number; length: number }[] = []
+    let searchStart = 0
+
+    while (searchStart < text.length) {
+        const idx = text.indexOf(searchText, searchStart)
+        if (idx === -1) break
+
+        const textBefore = text.substring(Math.max(0, idx - 40), idx)
+        const textAfter = text.substring(idx + searchText.length, idx + searchText.length + 40)
+
+        const scoreBefore = getContextScore(textBefore, change.context_before, true)
+        const scoreAfter = getContextScore(textAfter, change.context_after, false)
+
+        candidates.push({
+            index: idx,
+            score: scoreBefore + scoreAfter + 1.0,
+            length: searchText.length
+        })
+        searchStart = idx + 1
+    }
+
+    if (candidates.length === 0) return null
+    candidates.sort((a, b) => b.score - a.score)
+    return { start: candidates[0].index, end: candidates[0].index + candidates[0].length }
+}
+
+const dmp = new DiffMatchPatch()
+
+function projectCoordinates(start: number, end: number, oldText: string, newText: string): { start: number; end: number } | null {
+    try {
+        const diffs = dmp.diff_main(oldText, newText)
+        // dmp.diff_charsToLines_ is also possible but for small text diff_main is fine
+        const locStart = dmp.diff_xIndex(diffs, start)
+        const locEnd = dmp.diff_xIndex(diffs, end)
+
+        // If the entire range was deleted or becomes invalid, xIndex might still return a point.
+        // We should check if the projected range makes sense.
+        if (locStart === locEnd && start !== end) {
+            // Range collapsed to a point, likely deleted
+            return null
+        }
+        return { start: locStart, end: locEnd }
+    } catch (e) {
+        return null
+    }
+}
+
+function recalculateAllLocations(text: string, changes: Change[]): Change[] {
+    return changes.map(change => {
+        if (change.loc) return change // Keep existing if already projected/located
+        const loc = locateChangeInText(text, change)
+        return { ...change, loc: loc || undefined }
     })
 }
 
-function processAndFinalizeChanges(changes: Change[], originalText: string, revisedText: string): Change[] {
-    // 1. Recalculate locations for provided changes
-    let located = recalculateAllLocations(revisedText, changes)
-
-    // 2. Compute missing changes via Diff Fallback
-    // We only run this if we have a real diff engine available
-    try {
-        const missing = computeMissingChanges(originalText, revisedText, located)
-        if (missing.length > 0) {
-            if (DEBUG_LOC) console.log(`[DiffFallback] Found ${missing.length} missing changes.`)
-            located = [...located, ...missing]
-        }
-    } catch (e) {
-        console.error("[DiffFallback] Failed:", e)
-    }
-
-    // 3. Deduplicate (safeguard against weird auto-detect overlaps)
-    const deduped = deduplicateChanges(located)
-
-    // 4. Sort by location
-    return deduped.sort((a, b) => (a.loc?.start ?? 0) - (b.loc?.start ?? 0))
-        .map((c, i) => ({ ...c, change_id: `c${i + 1}` }))
-}
 
 export async function POST(req: NextRequest) {
     let anonId = ''
@@ -452,15 +380,7 @@ export async function POST(req: NextRequest) {
             setAnonIdCookie(resp, anonId); return resp
         }
 
-        // Run cheap rules first
-        const ruleResult = applyCheapRules(text)
-
-        if (req.headers.get('x-rules-only') === '1') {
-            const finalChanges = processAndFinalizeChanges(ruleResult.changes, text, ruleResult.revisedText)
-            const resp = successResponse({ revised_text: ruleResult.revisedText, changes: finalChanges })
-            resp.headers.set('X-Cache', 'MISS'); resp.headers.set('X-Rules-Only', 'HIT'); resp.headers.set('X-Provider', 'rules')
-            setAnonIdCookie(resp, anonId); return resp
-        }
+        // (Initial cheap rules handled inside processing loop for each pass)
 
         if (pendingRequests.has(cacheKey)) {
             try {
@@ -480,31 +400,104 @@ export async function POST(req: NextRequest) {
                 if (!rateLimitResult.ok) throw { status: 429, json: { error: 'Rate limit exceeded', scope: rateLimitResult.scope, retry_after_seconds: rateLimitResult.retryAfterSeconds }, retryAfter: rateLimitResult.retryAfterSeconds }
             }
 
-            let upstreamResult: RewriteResponse
             const upstreamStart = Date.now()
-            if (mode === 'mock') {
-                currentProvider = 'mock'; currentModel = 'mock-v1'
-                upstreamResult = await mockRewrite(ruleResult.revisedText)
-            } else {
-                currentProvider = provider
-                if (provider === 'groq') {
-                    currentModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
-                    upstreamResult = await realRewriteGroq(ruleResult.revisedText)
+            let currentText = text
+            let allChanges: Change[] = []
+            let iterations = 0
+            const MAX_ITERATIONS = 3
+            let stable = false
+
+            while (!stable && iterations < MAX_ITERATIONS) {
+                iterations++
+                const textAtStartOfPass = currentText
+
+                // 1. Cheap Rules
+                const passRuleResult = applyCheapRules(currentText)
+                const textAfterRules = passRuleResult.revisedText
+
+                // 2. LLM Pass
+                let passResult: RewriteResponse
+                if (mode === 'mock') {
+                    currentProvider = 'mock'; currentModel = 'mock-v1'
+                    passResult = await mockRewrite(textAfterRules)
                 } else {
-                    currentModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp'
-                    upstreamResult = await realRewriteGemini(ruleResult.revisedText)
+                    currentProvider = provider
+                    if (provider === 'groq') {
+                        currentModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+                        passResult = await realRewriteGroq(textAfterRules)
+                    } else {
+                        currentModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp'
+                        passResult = await realRewriteGemini(textAfterRules)
+                    }
                 }
+
+                const textAfterLLM = passResult.revised_text
+
+                // Check stability
+                if (textAfterLLM === textAtStartOfPass) {
+                    stable = true
+                }
+
+                // --- TRACK LOCATIONS ---
+
+                // A. Project existing changes from textAtStartOfPass to textAfterRules
+                if (textAfterRules !== textAtStartOfPass) {
+                    allChanges = allChanges.map(c => {
+                        if (!c.loc) return c
+                        const newLoc = projectCoordinates(c.loc.start, c.loc.end, textAtStartOfPass, textAfterRules)
+                        return { ...c, loc: newLoc || undefined }
+                    })
+                }
+
+                // B. Add rules changes (already located relative to textAfterRules if we are careful)
+                // Actually applyCheapRules uses locateChangeInText effectively or indexes.
+                // Let's ensure rules changes have loc.
+                const locatedRulesChanges = passRuleResult.changes.map(c => {
+                    const loc = locateChangeInText(textAfterRules, c)
+                    return { ...c, loc: loc || undefined }
+                })
+                allChanges.push(...locatedRulesChanges)
+
+                // C. Project everything to textAfterLLM
+                if (textAfterLLM !== textAfterRules) {
+                    allChanges = allChanges.map(c => {
+                        if (!c.loc) return c
+                        const newLoc = projectCoordinates(c.loc.start, c.loc.end, textAfterRules, textAfterLLM)
+                        return { ...c, loc: newLoc || undefined }
+                    })
+                }
+
+                // D. Add LLM changes (located relative to textAfterLLM)
+                const locatedLLMChanges = passResult.changes.map(c => {
+                    const loc = locateChangeInText(textAfterLLM, c)
+                    return { ...c, loc: loc || undefined }
+                })
+                allChanges.push(...locatedLLMChanges)
+
+                currentText = textAfterLLM
             }
-            console.log(`[Rewrite] event=provider_complete provider=${currentProvider} duration=${Date.now() - upstreamStart}ms`)
 
-            // Merge changes
-            const allChanges = [...ruleResult.changes, ...upstreamResult.changes]
+            console.log(`[Rewrite] event=fixed_point_complete provider=${currentProvider} iterations=${iterations} duration=${Date.now() - upstreamStart}ms`)
 
-            // Final processing: Locating, Deduplicating, Sorting + Diff Fallback
-            // Uses 'text' (original) and 'upstreamResult.revised_text' (final)
-            const finalChanges = processAndFinalizeChanges(allChanges, text, upstreamResult.revised_text)
+            // Final re-indexing and cleanup
+            const seenLocs = new Set<string>()
+            const finalChanges = allChanges
+                .filter(c => c.loc) // Only keep located changes
+                .filter(c => {
+                    const key = `${c.loc!.start}-${c.loc!.end}`
+                    if (seenLocs.has(key)) return false
+                    seenLocs.add(key)
+                    return true
+                })
+                .map((c, i) => ({
+                    ...c,
+                    change_id: `c${i + 1}`
+                }))
 
-            return { revised_text: upstreamResult.revised_text, changes: finalChanges }
+            return {
+                revised_text: currentText,
+                changes: finalChanges
+            }
         })()
 
         pendingRequests.set(cacheKey, processingPromise)

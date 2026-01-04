@@ -1,4 +1,4 @@
- export type ChangeType = 
+export type ChangeType =
   | 'spelling'
   | 'grammar'
   | 'punctuation'
@@ -7,6 +7,7 @@
   | 'numbers'
   | 'consistency'
   | 'citation_format'
+  | 'spacing'
   | 'other'
 
 export type Severity = 'required' | 'recommended' | 'optional' | 'uncertain'
@@ -30,5 +31,3 @@ export interface RewriteResponse {
   revised_text: string
   changes: Change[]
 }
-
-
