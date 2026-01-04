@@ -2,4 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --text-primary: #1a1a1a;
+    --text-secondary: #4a4a4a;
+    --brand-red: #8b0000;
+    --brand-red-dark: #660000;
+    --bg-main: #fcfbf7; /* Slight ivory tint for academic feel */
+    --border-subtle: #e5e5e5;
+  }
 
+  body {
+    @apply antialiased bg-[#fcfbf7] text-[#1a1a1a];
+    line-height: 1.6;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-serif tracking-tight;
+  }
+}
+
+@layer utilities {
+  .font-academic {
+    font-family: var(--font-crimson-pro), serif;
+  }
+  
+  .font-ui {
+    font-family: var(--font-inter), sans-serif;
+  }
+  
+  .serif-relaxed {
+    @apply font-serif leading-relaxed tracking-normal;
+  }
+}
+
+/* Custom scrollbar for academic feel */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}

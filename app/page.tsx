@@ -215,86 +215,113 @@ export default function Home() {
     }, [result, showHighlights, activeChangeId])
 
     return (
-        <div className="min-h-screen bg-white p-8 font-sans">
+        <div className="min-h-screen bg-[#fcfbf7] p-8 font-ui text-[#1a1a1a]">
             <div className="max-w-7xl mx-auto">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-3">
                         <svg className="w-8 h-8 text-brand-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                         </svg>
-                        <h1 className="text-3xl font-serif font-normal text-gray-900">
-                            Chicago Style Checker <span className="text-base text-gray-500 font-sans">(Beta)</span>
+                        <h1 className="text-3xl font-academic font-normal tracking-tight text-gray-900">
+                            Chicago Style Checker <span className="text-base text-gray-400 font-ui font-light">(Beta)</span>
                         </h1>
+                    </div>
+                    <div className="flex items-center gap-6">
+                        <Link
+                            href="/about"
+                            className="text-xs tracking-widest text-gray-500 hover:text-brand-red transition-colors font-medium"
+                        >
+                            ABOUT
+                        </Link>
+                        <span className="text-gray-200">|</span>
+                        <a
+                            href="https://forms.gle/kt8CLYoZRsdESXyh7"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs tracking-widest text-gray-500 hover:text-brand-red transition-colors font-medium"
+                        >
+                            FEEDBACK
+                        </a>
+                        <span className="text-gray-200">|</span>
+                        <a
+                            href="https://www.chicagomanualofstyle.org/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs tracking-widest text-gray-500 hover:text-brand-red transition-colors font-medium"
+                        >
+                            CMoS ONLINE
+                        </a>
                     </div>
                 </div>
 
-                <div className="border-b border-gray-200 mb-8"></div>
+                <div className="border-b border-gray-100 mb-10"></div>
 
                 {error && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-800 rounded-sm">
+                    <div className="mb-8 p-4 bg-red-50/50 border border-red-100 text-red-800 rounded-sm font-ui text-sm">
                         {error}
                     </div>
                 )}
 
                 {(loading || isQueued) && (
-                    <div className="mb-6 p-4 bg-gray-50 border border-gray-200 text-gray-700 rounded-sm">
+                    <div className="mb-8 p-4 bg-gray-50/50 border border-gray-100 text-gray-600 rounded-sm font-ui text-sm flex items-center gap-3">
+                        <div className="w-2 h-2 bg-brand-red rounded-full animate-pulse"></div>
                         {isQueued ? 'Queued... (Waiting for typing to stop)' : 'Processing your text...'}
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                    <div className="flex flex-col min-h-[26rem]">
-                        <div className="flex justify-between items-center mb-3">
-                            <label className="text-sm font-normal text-gray-700">Original Paragraph</label>
-                            <button onClick={handleClear} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded transition-colors">
-                                <X className="w-4 h-4" /> Clear
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-10">
+                    <div className="flex flex-col min-h-[28rem]">
+                        <div className="flex justify-between items-center mb-4">
+                            <label className="text-xs uppercase tracking-widest font-semibold text-gray-500">Original Paragraph</label>
+                            <button onClick={handleClear} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs uppercase tracking-widest text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded transition-all">
+                                <X className="w-3.5 h-3.5" /> Clear
                             </button>
                         </div>
                         <textarea
                             value={inputText}
                             onChange={(e) => setInputText(e.target.value)}
-                            placeholder="Paste a paragraph to edit…"
-                            className="w-full flex-1 min-h-[18rem] p-5 border border-gray-200 rounded font-serif text-gray-900 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-gray-400 mb-4 text-base"
+                            placeholder="Paste your manuscript excerpt here…"
+                            className="w-full flex-1 min-h-[20rem] p-6 border border-gray-200/60 rounded-sm font-academic text-gray-900 leading-relaxed resize-none focus:outline-none focus:border-brand-red/30 focus:ring-0 mb-6 text-lg transition-all placeholder:text-gray-300"
                         />
                         <button
                             onClick={handleApply}
                             disabled={loading}
-                            className={`w-full px-6 py-3 rounded text-white font-normal text-base transition-colors ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-red hover:bg-brand-red-dark'}`}
+                            className={`w-full px-8 py-4 rounded-sm text-white font-ui uppercase tracking-[0.2em] text-xs font-semibold shadow-sm transition-all ${loading ? 'bg-gray-300 cursor-not-allowed' : 'bg-brand-red hover:bg-brand-red-dark active:scale-[0.99]'}`}
                         >
-                            {loading ? 'Processing...' : 'Apply Chicago Style'}
+                            {loading ? 'Analyzing...' : 'Apply Chicago Style'}
                         </button>
                     </div>
 
-                    <div className="flex flex-col min-h-[26rem]">
-                        <div className="flex justify-between items-center mb-3">
-                            <label className="text-sm font-normal text-gray-700">Revised Paragraph</label>
+                    <div className="flex flex-col min-h-[28rem]">
+                        <div className="flex justify-between items-center mb-4">
+                            <label className="text-xs uppercase tracking-widest font-semibold text-gray-500">Revised Paragraph</label>
                             {result && (
-                                <div className="flex items-center gap-3">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <Eye className="w-4 h-4 text-gray-700" />
-                                        <span className="text-sm text-gray-700">Show highlights</span>
+                                <div className="flex items-center gap-6">
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <Eye className="w-4 h-4 text-gray-400 group-hover:text-brand-red transition-colors" />
+                                        <span className="text-xs uppercase tracking-widest text-gray-500 font-medium">Show highlights</span>
                                         <input type="checkbox" checked={showHighlights} onChange={(e) => setShowHighlights(e.target.checked)} className="sr-only peer" />
-                                        <div className="relative w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-brand-red transition-colors duration-200">
-                                            <div className={`absolute top-[2px] left-[2px] w-5 h-5 bg-white rounded-full transition-transform duration-200 ${showHighlights ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                        <div className="relative w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-brand-red transition-colors duration-200">
+                                            <div className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full transition-transform duration-200 ${showHighlights ? 'translate-x-5' : 'translate-x-0'}`}></div>
                                         </div>
                                     </label>
-                                    <button onClick={handleCopy} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded transition-colors">
-                                        <Copy className="w-4 h-4" /> Copy
+                                    <button onClick={handleCopy} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs uppercase tracking-widest text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded transition-all">
+                                        <Copy className="w-3.5 h-3.5" /> Copy
                                     </button>
                                 </div>
                             )}
                         </div>
-                        <div className="w-full flex-1 min-h-[18rem] p-5 border border-gray-200 rounded font-serif text-gray-900 leading-relaxed bg-white overflow-y-auto text-base">
-                            {result ? <div>{renderedText}</div> : <div className="text-gray-400 italic text-sm">Revised text will appear here...</div>}
+                        <div className="w-full flex-1 min-h-[20rem] p-6 border border-gray-200/60 rounded-sm font-academic text-gray-900 leading-relaxed bg-[#fefefe] shadow-inner-sm overflow-y-auto text-lg selection:bg-red-50">
+                            {result ? <div>{renderedText}</div> : <div className="text-gray-300 italic text-sm font-ui">Analytical output will appear here...</div>}
                         </div>
                     </div>
                 </div>
 
                 {result && (
-                    <div className="mt-10">
-                        <h2 className="text-lg font-serif font-normal mb-4 text-gray-900">Changes</h2>
+                    <div className="mt-12 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                        <h2 className="text-xl font-academic font-normal mb-6 text-gray-900 border-b border-gray-100 pb-2">Technical Revisions</h2>
                         {result.changes.length > 0 ? (
-                            <ul className="space-y-2.5">
+                            <ul className="space-y-4">
                                 {result.changes.map((change) => {
                                     const hasLoc = Boolean(change.loc)
                                     return (
@@ -302,20 +329,33 @@ export default function Home() {
                                             key={change.change_id}
                                             onMouseEnter={() => hasLoc && setActiveChangeId(change.change_id)}
                                             onMouseLeave={() => hasLoc && setActiveChangeId(null)}
-                                            className={`p-3 border-l border-gray-200 transition-all ${hasLoc ? 'hover:border-gray-400 hover:bg-gray-50 cursor-pointer' : 'opacity-60'} ${activeChangeId === change.change_id ? 'border-gray-400 bg-gray-50' : ''}`}
+                                            className={`p-4 border-l-2 border-transparent transition-all hover:bg-white hover:shadow-sm ${hasLoc ? 'cursor-pointer' : 'opacity-60'} ${activeChangeId === change.change_id ? 'border-brand-red bg-white shadow-sm' : 'hover:border-gray-200'}`}
                                         >
-                                            <div className="flex flex-col gap-1">
-                                                <div className="text-sm text-gray-900 flex flex-wrap items-center gap-2">
-                                                    <span className="font-serif font-medium text-gray-900">[{change.type}]</span>
-                                                    <span className="font-serif text-gray-600 line-through decoration-red-300 decoration-1">{change.before}</span>
-                                                    <span className="text-gray-400">→</span>
-                                                    <span className="font-serif font-medium text-brand-red">{change.after}</span>
-                                                    {!hasLoc && <span className="text-xs text-gray-500 italic px-1.5 py-0.5 bg-gray-100 rounded">(unlocated)</span>}
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <span className="text-[10px] uppercase tracking-[0.15em] font-bold text-gray-400 bg-gray-50 px-2 py-1 rounded-sm">
+                                                        {change.type === 'INSERT_AT_END' ? 'Punctuation' : change.type}
+                                                    </span>
+                                                    <div className="flex items-center gap-2 text-sm">
+                                                        {change.type === 'INSERT_AT_END' ? (
+                                                            <>
+                                                                <span className="font-academic font-medium text-brand-red">+{change.after}</span>
+                                                                <span className="text-gray-400 italic text-[11px] ml-1">at end of paragraph</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="font-academic text-gray-400 line-through decoration-red-200/50 decoration-1">{change.before}</span>
+                                                                <span className="text-gray-300 font-light mx-1">→</span>
+                                                                <span className="font-academic font-medium text-brand-red">{change.after}</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    {!hasLoc && <span className="text-[10px] uppercase tracking-wider text-gray-400 px-1.5 py-0.5 bg-gray-50 rounded-sm">unlocated</span>}
                                                 </div>
-                                                <div className="text-sm text-gray-600 leading-snug">
+                                                <div className="text-[13px] text-gray-600 leading-relaxed font-ui">
                                                     {change.reason}
                                                     {change.severity !== 'recommended' && (
-                                                        <span className="ml-2 text-xs text-gray-400 italic">({change.severity})</span>
+                                                        <span className="ml-2 text-[11px] text-gray-400 italic">({change.severity})</span>
                                                     )}
                                                 </div>
                                             </div>
@@ -324,8 +364,8 @@ export default function Home() {
                                 })}
                             </ul>
                         ) : (
-                            <div className="p-4 bg-green-50 border border-green-200 rounded-sm text-green-900 font-serif text-sm">
-                                Your text is correct according to Chicago Style.
+                            <div className="p-6 bg-green-50/30 border border-green-100/50 rounded-sm text-green-800 font-academic text-base italic">
+                                The text conforms to Chicago Style conventions. No technical revisions identified.
                             </div>
                         )}
                     </div>

@@ -1,5 +1,18 @@
 import type { Metadata } from 'next'
+import { Inter, Crimson_Pro } from 'next/font/google'
 import './globals.css'
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+})
+
+const crimsonPro = Crimson_Pro({
+  subsets: ['latin'],
+  variable: '--font-crimson-pro',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Chicago Style Checker (Beta)',
@@ -12,11 +25,13 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} ${crimsonPro.variable}`}>
       <head>
         <meta name="robots" content="noindex, nofollow" />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased min-h-screen selection:bg-red-100 selection:text-red-900">
+        {children}
+      </body>
     </html>
   )
 }

@@ -8,6 +8,7 @@ export type ChangeType =
   | 'consistency'
   | 'citation_format'
   | 'spacing'
+  | 'INSERT_AT_END'
   | 'other'
 
 export type Severity = 'required' | 'recommended' | 'optional' | 'uncertain'

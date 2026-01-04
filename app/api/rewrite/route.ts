@@ -275,6 +275,10 @@ function getContextScore(text: string, anchorStr: string, isStart: boolean): num
 }
 
 function locateChangeInText(text: string, change: Change): { start: number; end: number } | null {
+    if (change.type === 'INSERT_AT_END') {
+        const s = Math.max(0, text.length - change.after.length)
+        return { start: s, end: text.length }
+    }
     const searchText = change.after.trim()
 
     // If it's a deletion (empty after), we look for the insertion point between context_before and context_after
@@ -468,9 +472,15 @@ export async function POST(req: NextRequest) {
                 }
 
                 // D. Add LLM changes (located relative to textAfterLLM)
+                const isSuffixOnly = textAfterLLM.startsWith(textAfterRules) && textAfterLLM.length > textAfterRules.length
                 const locatedLLMChanges = passResult.changes.map(c => {
-                    const loc = locateChangeInText(textAfterLLM, c)
-                    return { ...c, loc: loc || undefined }
+                    let finalType = c.type
+                    // Detect if this is an insertion at the very end
+                    if (isSuffixOnly && (!c.context_after || !c.context_after.trim()) && textAfterLLM.endsWith(c.after)) {
+                        finalType = 'INSERT_AT_END'
+                    }
+                    const loc = locateChangeInText(textAfterLLM, { ...c, type: finalType })
+                    return { ...c, type: finalType, loc: loc || undefined }
                 })
                 allChanges.push(...locatedLLMChanges)
 
