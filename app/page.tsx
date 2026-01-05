@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { RewriteResponse, Change } from '@/types'
 import { X, Eye, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -83,6 +83,22 @@ export default function Home() {
     const [result, setResult] = useState<RewriteResponse | null>(null)
     const [activeChangeId, setActiveChangeId] = useState<string | null>(null)
     const [showHighlights, setShowHighlights] = useState(true)
+
+    // Draft persistence
+    useEffect(() => {
+        const savedDraft = sessionStorage.getItem('cmos:draft:v1')
+        if (savedDraft && !inputText) {
+            setInputText(savedDraft)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (inputText) {
+            sessionStorage.setItem('cmos:draft:v1', inputText)
+        } else {
+            sessionStorage.removeItem('cmos:draft:v1')
+        }
+    }, [inputText])
 
     const latestInputTextRef = useRef(inputText)
     if (latestInputTextRef.current !== inputText) {
@@ -200,6 +216,7 @@ export default function Home() {
         setResult(null)
         setError(null)
         setActiveChangeId(null)
+        sessionStorage.removeItem('cmos:draft:v1')
         if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)
         setIsQueued(false)
     }
