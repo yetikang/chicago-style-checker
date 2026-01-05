@@ -21,6 +21,7 @@ export const metadata: Metadata = {
 
 import { SessionProvider } from '@/lib/session-store'
 import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export default function RootLayout({
   children,
@@ -37,6 +38,7 @@ export default function RootLayout({
           {children}
         </SessionProvider>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   )
