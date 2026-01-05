@@ -1,7 +1,8 @@
 # Chicago Style Checker
+[cmos-checker.com](https://cmos-checker.com)
 
-An experimental academic writing tool for **technical and stylistic revisions**
-aligned with the *Chicago Manual of Style (17th edition)*.
+A lightweight editorial tool for **technical revisions**
+aligned with the *Chicago Manual of Style conventions*.
 
 This project focuses on formal issues such as punctuation, capitalization,
 citation phrasing, and consistency.  
