@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 }
 
 import { SessionProvider } from '@/lib/session-store'
+import { Analytics } from "@vercel/analytics/next"
 
 export default function RootLayout({
   children,
@@ -35,6 +36,7 @@ export default function RootLayout({
         <SessionProvider>
           {children}
         </SessionProvider>
+        <Analytics />
       </body>
     </html>
   )
