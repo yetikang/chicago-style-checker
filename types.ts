@@ -32,3 +32,19 @@ export interface RewriteResponse {
   revised_text: string
   changes: Change[]
 }
+
+export interface HistoryItem {
+  id: string
+  createdAt: number
+  input: string
+  output: RewriteResponse
+  provider?: string
+}
+
+export interface Session {
+  sessionId: string
+  createdAt: number
+  lastActiveAt: number
+  ttlMs: number
+  history: HistoryItem[]
+}

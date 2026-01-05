@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { RewriteResponse, Change } from '@/types'
-import { X, Eye, Copy } from 'lucide-react'
+import { RewriteResponse, Change, HistoryItem } from '@/types'
+import { X, Eye, Copy, History, Trash2, Clock } from 'lucide-react'
 import Link from 'next/link'
+import { useSession } from '@/lib/session-store'
 
 // Helper function to render revised text with highlights strictly from server-provided authoritative data
 function renderRevisedText(
@@ -74,6 +75,7 @@ function renderRevisedText(
 
 
 export default function Home() {
+    const { session, pushHistory, clearSession, touch, isLoading } = useSession()
     const [isQueued, setIsQueued] = useState(false)
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -95,10 +97,11 @@ export default function Home() {
     useEffect(() => {
         if (inputText) {
             sessionStorage.setItem('cmos:draft:v1', inputText)
+            touch()
         } else {
             sessionStorage.removeItem('cmos:draft:v1')
         }
-    }, [inputText])
+    }, [inputText, touch])
 
     const latestInputTextRef = useRef(inputText)
     if (latestInputTextRef.current !== inputText) {
@@ -180,7 +183,9 @@ export default function Home() {
 
             const data: RewriteResponse = await response.json()
             setResult(data)
-        } catch (err) {
+            pushHistory(textToSend, data, response.headers.get('X-Provider') || undefined)
+            return
+        } catch (err: any) {
             if (err instanceof Error && err.name === 'AbortError') {
                 setError('Timed out after 30 seconds.')
             } else {
@@ -219,6 +224,20 @@ export default function Home() {
         sessionStorage.removeItem('cmos:draft:v1')
         if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)
         setIsQueued(false)
+    }
+
+    const handleClearSession = () => {
+        if (confirm('Are you sure you want to clear your entire session history and draft?')) {
+            clearSession()
+            setResult(null)
+            setInputText('')
+        }
+    }
+
+    const handleSelectHistory = (item: HistoryItem) => {
+        setInputText(item.input)
+        setResult(item.output)
+        touch()
     }
 
     const renderedText = useMemo(() => {
@@ -385,6 +404,52 @@ export default function Home() {
                                 The text conforms to Chicago Style conventions. No technical revisions identified.
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Session History Section */}
+                {session && session.history.length > 0 && (
+                    <div className="mt-20 pb-20 border-t border-gray-100 pt-12 animate-in fade-in duration-1000">
+                        <div className="flex items-center justify-between mb-8">
+                            <div className="flex items-center gap-3">
+                                <History className="w-5 h-5 text-gray-400" />
+                                <h2 className="text-lg font-academic font-normal text-gray-900">Recent History</h2>
+                            </div>
+                            <button
+                                onClick={handleClearSession}
+                                className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-400 hover:text-brand-red transition-colors font-bold"
+                            >
+                                <Trash2 className="w-3 h-3" />
+                                Clear Session
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                            {session.history.map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => handleSelectHistory(item)}
+                                    className="text-left p-4 bg-white/50 border border-gray-100 rounded-sm hover:border-brand-red/30 hover:bg-white transition-all group"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex flex-col gap-1 min-w-[80px]">
+                                            <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-medium">
+                                                <Clock className="w-3 h-3" />
+                                                {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                            {item.provider && (
+                                                <span className="text-[9px] uppercase tracking-tighter text-gray-300 font-bold">{item.provider}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 truncate text-sm font-ui text-gray-500 group-hover:text-gray-900 transition-colors">
+                                            {item.input.slice(0, 100)}{item.input.length > 100 ? '...' : ''}
+                                        </div>
+                                        <div className="text-[10px] text-brand-red opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase tracking-widest">
+                                            Restore →
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
